@@ -2,7 +2,7 @@
 
 Kernel patches to get KGDB working on the Nexus 6.
 
-For background, please see associated blog post at http://www.contextis.com/resources/blog/kgdb-kernel-debugging-android
+For background, please see associated blog post at http://www.contextis.com/resources/blog/kgdb-android-debugging-kernel-boss
 
 0. Root your Nexus 6!
 1. Download and build the stock Nexus 6 kernel (kernel/msm) using instructions from https://source.android.com/source/building.html
