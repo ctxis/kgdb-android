@@ -1,0 +1,81 @@
+diff --git a/drivers/tty/serial/kgdboc.c b/drivers/tty/serial/kgdboc.c
+index 10020547c60b..3cc7dcb58e97 100644
+--- a/drivers/tty/serial/kgdboc.c
++++ b/drivers/tty/serial/kgdboc.c
+@@ -29,6 +29,7 @@ static struct kgdb_io		kgdboc_io_ops;
+ static int configured		= -1;
+ 
+ static char config[MAX_CONFIG_LEN];
++static int config_retry_time = 0;
+ static struct kparam_string kps = {
+ 	.string			= config,
+ 	.maxlen			= MAX_CONFIG_LEN,
+@@ -153,6 +154,28 @@ static void cleanup_kgdboc(void)
+ 		kgdb_unregister_io_module(&kgdboc_io_ops);
+ }
+ 
++static int kgdbretry_option_setup(char *opt)
++{
++	if (strlen(opt) > MAX_CONFIG_LEN) {
++		printk(KERN_ERR "kgdbretry: config string too long\n");
++		return -ENOSPC;
++	}
++	config_retry_time = simple_strtoul(opt, NULL, 10);
++
++	return 0;
++}
++
++__setup("kgdbretry=", kgdbretry_option_setup);
++
++static int configure_kgdboc(void);
++static void ttycheck_func(struct work_struct *work)
++{
++	config_retry_time = 0;
++	configure_kgdboc();
++}
++
++static DECLARE_DELAYED_WORK(ttycheck_work, ttycheck_func);
++
+ static int configure_kgdboc(void)
+ {
+ 	struct tty_driver *p;
+@@ -179,8 +202,15 @@ static int configure_kgdboc(void)
+ 		goto do_register;
+ 
+ 	p = tty_find_polling_driver(cptr, &tty_line);
+-	if (!p)
++	if (!p) {
++		printk(KERN_INFO "kgdb will retry in %d secs\n", config_retry_time);
++		if (config_retry_time > 0) {
++			INIT_DELAYED_WORK(&ttycheck_work, ttycheck_func);
++			schedule_delayed_work(&ttycheck_work, config_retry_time * HZ);
++			return -ENODEV;
++		}
+ 		goto noconfig;
++    }
+ 
+ 	cons = console_drivers;
+ 	while (cons) {
+@@ -202,6 +232,7 @@ do_register:
+ 		goto noconfig;
+ 
+ 	err = kgdb_register_nmi_console();
++
+ 	if (err)
+ 		goto nmi_con_failed;
+ 
+@@ -212,6 +243,7 @@ do_register:
+ nmi_con_failed:
+ 	kgdb_unregister_io_module(&kgdboc_io_ops);
+ noconfig:
++    printk(KERN_ERR "kgdb failed to initialise\n");
+ 	kgdboc_unregister_kbd();
+ 	config[0] = 0;
+ 	configured = 0;
+@@ -335,5 +367,6 @@ module_init(init_kgdboc);
+ module_exit(cleanup_kgdboc);
+ module_param_call(kgdboc, param_set_kgdboc_var, param_get_string, &kps, 0644);
+ MODULE_PARM_DESC(kgdboc, "<serial_device>[,baud]");
++MODULE_PARM_DESC(kgdbretry, "<delay in seconds> before retrying tty");
+ MODULE_DESCRIPTION("KGDB Console TTY Driver");
+ MODULE_LICENSE("GPL");
